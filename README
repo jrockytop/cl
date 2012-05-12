@@ -1,0 +1,38 @@
+cl is a program for launching common lisp implementations.  The cl
+program acts kind of like the python interpreter... if you write a
+lisp script with #!/usr/local/bin/cl at the top of the file, it will
+run the script and if you invoke cl directly it will go into the lisp
+repl.  The rlwrap program is invoked in repl mode and provides a
+readline interface for interactive sessions.  So, make sure you have
+rlwrap installed.  Also, make sure you have a supported lisp
+implementation installed too. :-)
+
+The program currently works with SBCL, CCL, and ECL.  More
+implementations will probably be added in the future.
+
+To support #! functionality, the #! macro character is set to ignore
+the line.  If you use #! for other functionality, it will cause a
+conflict.
+
+cl also sets up the global variable *args* with the argument list
+passed to the lisp script.  The script name is set to *program-name*.
+I'm still decideing if these are the best names to use, so they might
+possibly change in the future.  But, they don't seem to cause any
+conflicts in my testing so far.
+
+When running scripts, the lisp implementation will have its debugger
+turned off.  So if there are any errors in your script, the script
+will exit with whatever message the lisp implementation prints and
+then take you back to your shell.  I may add a flag to cl to enable
+the debugger when running scripts in the future.
+
+By default, SBCL is used.  But, you can set the environment variable,
+CL, to another lisp implementation.  For instance "export CL=ccl64",
+would cause your cl scripts to run ccl instead.
+
+There is currently one flag, "-l <lisp-implementation>".  This flag
+overrides the CL environment variable, so you can lock down individual
+lisp scripts to a certain implementation.
+
+This is just an initial check-in.  I plan on cleaning it up and adding
+more features soon.
