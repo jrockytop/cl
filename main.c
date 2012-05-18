@@ -30,6 +30,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <getopt.h>
 #include <string.h>
 
@@ -80,7 +81,7 @@ void run_script(char *lisp, char *script, char *args)
 	
 	if (!strcmp("sbcl", lisp)) {
 		execlp("sbcl", "sbcl", "--noinform", "--disable-debugger", "--eval", name,
-		       "--eval", args, "--eval", shebang, "--quit", "--load", script, NULL);
+		       "--eval", args, "--eval", shebang, "--load", script, "--eval", "(quit)", NULL);
 	}
 	
 	if (!strcmp("ccl", lisp) || !strcmp("ccl64", lisp)) {
