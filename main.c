@@ -30,6 +30,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <unistd.h>
 #include <getopt.h>
 #include <string.h>
@@ -40,6 +41,30 @@ char *shebang = "(set-dispatch-macro-character #\\# #\\!"
 	        "  (declare (ignore c n))"
 	        "  (read-line s nil nil t)"
 	        "  nil))";
+
+/*
+ * Return a string that is the result of concatenating all the arguments.
+ */
+char *concatenate(char *string, ...)
+{
+	va_list ap;
+	char *result = strdup(string);
+	char *s;
+
+	va_start(ap, string);
+
+	while ((s=va_arg(ap, char*)) != NULL) {
+		result = realloc(result, strlen(result)+strlen(s)+1);
+		if (result == NULL) {
+			break;
+		}
+		strcat(result, s);
+	}
+
+	va_end(ap);
+
+	return result;
+}
 
 /*
  * Start up a lisp repl with rlwrap.   
@@ -62,6 +87,10 @@ void invoke_lisp_repl(char *lisp)
 	if (!strcmp("ecl", lisp)) {
 		execlp("rlwrap", "ecl", "ecl", "-q", "-eval", shebang,
 		       "-eval", "(setf *load-verbose* nil asdf:*asdf-verbose* nil)", NULL);
+	}
+	
+	if (!strcmp("clisp", lisp)) {
+		execlp("rlwrap", lisp, lisp, "-x", shebang, "-repl", NULL);
 	}
 	
 	execlp("rlwrap", lisp, lisp, NULL);
@@ -97,6 +126,16 @@ void run_script(char *lisp, char *script, char *args)
 		       "-eval", "(setf *load-verbose* nil asdf:*asdf-verbose* nil)",
 		       "-eval", shebang, "-eval", name, "-eval", args,
 		       "-shell", script, NULL);
+	}
+
+	if (!strcmp("clisp", lisp)) {
+		char *expressions = concatenate(name, args, shebang, NULL);
+		char load[strlen(expressions) + strlen(script) + 128];
+		snprintf(load, sizeof(load),
+			 "(progn %s (load \"%s\")"
+			 "(setf *standard-output* (make-broadcast-stream)))",
+			 expressions, script);
+		execlp(lisp, lisp, "-q", "-q", "-x", load, NULL);
 	}
 	
 	fprintf(stderr, "%s lisp not supported\n", lisp);
