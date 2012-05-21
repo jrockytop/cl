@@ -7,7 +7,7 @@ readline interface for interactive sessions.  So, make sure you have
 rlwrap installed.  Also, make sure you have a supported lisp
 implementation installed too. :-)
 
-The program currently works with SBCL, CCL, and ECL.  More
+The program currently works with SBCL, CCL, CLISP and ECL.  More
 implementations will probably be added in the future.
 
 To support #! functionality, the #! macro character is set to ignore
@@ -16,9 +16,15 @@ conflict.
 
 cl also sets up the global variable *args* with the argument list
 passed to the lisp script.  The script name is set to *program-name*.
-I'm still decideing if these are the best names to use, so they might
+I'm still deciding if these are the best names to use, so they might
 possibly change in the future.  But, they don't seem to cause any
 conflicts in my testing so far.
+
+To parse the  argument list, a macro named parse-args is defined.  It
+takes  a list  of  options. Each  option  consists of  a  list with  3
+strings: the short-option name + argument (if needed), the long-option
+name, and a  description of the option.  See  the test.lisp script for
+an example use of parse-args.
 
 When running scripts, the lisp implementation will have its debugger
 turned off.  So if there are any errors in your script, the script

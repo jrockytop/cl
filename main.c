@@ -35,6 +35,8 @@
 #include <getopt.h>
 #include <string.h>
 
+extern char *parse_args;
+
 /* The common lisp magic for #! acceptance */
 char *shebang = "(set-dispatch-macro-character #\\# #\\!"
 	        " (lambda (s c n)"
@@ -77,15 +79,15 @@ void invoke_lisp_repl(char *lisp)
 	}
 
 	if (!strcmp("sbcl", lisp)) {
-		execlp("rlwrap", "sbcl", "sbcl", "--eval", shebang, NULL);
+		execlp("rlwrap", "sbcl", "sbcl", "--eval", shebang, "--eval", parse_args, NULL);
 	}
 	
 	if (!strcmp("ccl", lisp) || !strcmp("ccl64", lisp)) {
-		execlp("rlwrap", lisp, lisp, "-e", shebang, NULL);
+		execlp("rlwrap", lisp, lisp, "-e", shebang, "-e", parse_args, NULL);
 	}
 
 	if (!strcmp("ecl", lisp)) {
-		execlp("rlwrap", "ecl", "ecl", "-q", "-eval", shebang,
+		execlp("rlwrap", "ecl", "ecl", "-q", "-eval", shebang, "-eval", parse_args,
 		       "-eval", "(setf *load-verbose* nil asdf:*asdf-verbose* nil)", NULL);
 	}
 	
@@ -110,7 +112,8 @@ void run_script(char *lisp, char *script, char *args)
 	
 	if (!strcmp("sbcl", lisp)) {
 		execlp("sbcl", "sbcl", "--noinform", "--disable-debugger", "--eval", name,
-		       "--eval", args, "--eval", shebang, "--load", script, "--eval", "(quit)", NULL);
+		       "--eval", args, "--eval", shebang, "--eval", parse_args,
+		       "--load", script, "--eval", "(quit)", NULL);
 	}
 	
 	if (!strcmp("ccl", lisp) || !strcmp("ccl64", lisp)) {
@@ -118,18 +121,18 @@ void run_script(char *lisp, char *script, char *args)
 			"(declare (ignore y)) (describe x)(quit)))";
 		
 		execlp(lisp, lisp, "-Q", "-e", shebang, "-e", name, "-e", args,
-		       "-e", nodebug, "-l", script, "-e", "(quit)", NULL);
+		       "-e", nodebug, "-e", parse_args, "-l", script, "-e", "(quit)", NULL);
 	}
 
 	if (!strcmp("ecl", lisp)) {
 		execlp("ecl", "ecl", "-q",
 		       "-eval", "(setf *load-verbose* nil asdf:*asdf-verbose* nil)",
-		       "-eval", shebang, "-eval", name, "-eval", args,
+		       "-eval", shebang, "-eval", name, "-eval", args, "-eval", parse_args,
 		       "-shell", script, NULL);
 	}
 
 	if (!strcmp("clisp", lisp)) {
-		char *expressions = concatenate(name, args, shebang, NULL);
+		char *expressions = concatenate(name, args, shebang, parse_args, NULL);
 		char load[strlen(expressions) + strlen(script) + 128];
 		snprintf(load, sizeof(load),
 			 "(progn %s (load \"%s\")"
