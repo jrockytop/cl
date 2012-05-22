@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012, Jason Wade Cox <jason@coxmountain.com>
+ *                     Jon Gettler
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -132,6 +133,7 @@ void run_script(char *lisp, char *script, char *args)
 	}
 
 	if (!strcmp("clisp", lisp)) {
+		bcopy("setf  ", args+1, 6);
 		char *expressions = concatenate(name, args, shebang, parse_args, NULL);
 		char load[strlen(expressions) + strlen(script) + 128];
 		snprintf(load, sizeof(load),
