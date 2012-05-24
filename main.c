@@ -35,15 +35,12 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <string.h>
+#include <sys/stat.h>
 
 extern char *parse_args;
-
-/* The common lisp magic for #! acceptance */
-char *shebang = "(set-dispatch-macro-character #\\# #\\!"
-	        " (lambda (s c n)"
-	        "  (declare (ignore c n))"
-	        "  (read-line s nil nil t)"
-	        "  nil))";
+extern char *shebang;
+extern char *lisp_args;
+extern char *create_build_file;
 
 /*
  * Return a string that is the result of concatenating all the arguments.
@@ -99,6 +96,55 @@ void invoke_lisp_repl(char *lisp)
 	execlp("rlwrap", lisp, lisp, NULL);
 }
 
+void execute_lisp(char *lisp, char *expression, int ret)
+{
+	pid_t pid = 0;
+	int status;
+
+	if (ret) {
+		pid = fork();
+		if (pid < 0) {
+			perror("fork");
+			exit(-1);
+		}
+	}
+	
+	if (!pid) {
+		if (!strcmp("sbcl", lisp)) {
+			char *eval = concatenate("(progn ", expression, ")", NULL);
+			execlp("sbcl", "sbcl", "--noinform", "--disable-debugger", 
+			       "--eval", eval, NULL);
+		}
+	
+		if (!strcmp("ccl", lisp) || !strcmp("ccl64", lisp)) {
+			char *nodebug = concatenate("(progn (setf *debugger-hook* "
+						    "(lambda (x y)"
+						    "(declare (ignore y)) (describe x)))",
+						    expression, ")", NULL);
+			execlp(lisp, lisp, "-Q", "-e", nodebug, NULL);
+		}
+		
+		if (!strcmp("ecl", lisp)) {
+			char *eval = concatenate("(progn (setf *load-verbose* nil "
+						 "asdf:*asdf-verbose* nil)",
+						 expression, ")", NULL);
+			execlp("ecl", "ecl", "-q", "-eval", eval, NULL);
+		}
+
+		if (!strcmp("clisp", lisp)) {
+			char *eval = concatenate("(progn ", expression, ")", NULL);
+			execlp(lisp, lisp, "-q", "-q", "-x", eval, NULL);
+		}
+		
+		fprintf(stderr, "%s lisp not supported\n", lisp);
+		exit(-1);
+	} else {
+		pid = wait(&status);
+		if (pid < 0)
+			perror("wait");
+	}
+}
+
 /*
  * Run a script with the passed in <lisp> implementation.
  * The <script> argument contains the scripts filename
@@ -106,45 +152,44 @@ void invoke_lisp_repl(char *lisp)
  */
 void run_script(char *lisp, char *script, char *args)
 {
-	int sz = strlen(script) + 32;
-	char name[sz];
+	char *expressions = concatenate("(defvar *program-name* nil)(defvar *args* nil)",
+					"(setf *program-name* \"",script, "\")", args,
+					shebang, parse_args,
+					"(load \"", script, "\")(quit)", NULL);
+	execute_lisp(lisp, expressions, 0);
+}
 
-	snprintf(name, sz, "(defvar *program-name* \"%s\")", script);
-	
-	if (!strcmp("sbcl", lisp)) {
-		execlp("sbcl", "sbcl", "--noinform", "--disable-debugger", "--eval", name,
-		       "--eval", args, "--eval", shebang, "--eval", parse_args,
-		       "--load", script, "--eval", "(quit)", NULL);
-	}
-	
-	if (!strcmp("ccl", lisp) || !strcmp("ccl64", lisp)) {
-		char *nodebug = "(setf *debugger-hook* (lambda (x y)"
-			"(declare (ignore y)) (describe x)(quit)))";
-		
-		execlp(lisp, lisp, "-Q", "-e", shebang, "-e", name, "-e", args,
-		       "-e", nodebug, "-e", parse_args, "-l", script, "-e", "(quit)", NULL);
-	}
+/*
+ * This function will build an executable file named <execname> from
+ * the lisp file <filename> using the <lisp> implementation.  If the
+ * <keep> option is true, the temporary build source file will not be
+ * deleted (so one can inspect the code...)
+ */
+void build_executable(char *lisp, char *lisp_file, char *execname, int keep)
+{
+	struct stat statbuf;
+	char *build_file = concatenate(lisp_file, ".CL-MAIN", NULL);
+	char *expressions = concatenate(shebang, lisp_args, create_build_file,
+					"(create-build-file \"", lisp_file, "\" \"",
+					execname, "\")(quit)", NULL);
 
-	if (!strcmp("ecl", lisp)) {
-		execlp("ecl", "ecl", "-q",
-		       "-eval", "(setf *load-verbose* nil asdf:*asdf-verbose* nil)",
-		       "-eval", shebang, "-eval", name, "-eval", args, "-eval", parse_args,
-		       "-shell", script, NULL);
-	}
-
-	if (!strcmp("clisp", lisp)) {
-		bcopy("setf  ", args+1, 6);
-		char *expressions = concatenate(name, args, shebang, parse_args, NULL);
-		char load[strlen(expressions) + strlen(script) + 128];
-		snprintf(load, sizeof(load),
-			 "(progn %s (load \"%s\")"
-			 "(setf *standard-output* (make-broadcast-stream)))",
-			 expressions, script);
-		execlp(lisp, lisp, "-q", "-q", "-x", load, NULL);
+	if (!stat(build_file, &statbuf)) {
+		fprintf(stderr, "Temporary build file '%s' exists.\n"
+			"The file must be removed before another build can execute.\n",
+			build_file);
+		exit(-1);
 	}
 	
-	fprintf(stderr, "%s lisp not supported\n", lisp);
-	exit(-1);
+	execute_lisp(lisp, expressions, 1);
+	free(expressions);
+	expressions = concatenate(shebang, parse_args, "(load \"", build_file,
+				  "\")(quit)", NULL);
+	execute_lisp(lisp, expressions, 1);
+
+	if (!keep && unlink(build_file) < 0) {
+		perror(build_file);
+		exit(-1);
+	}
 }
 
 /*
@@ -168,7 +213,7 @@ char *make_script_args(int argc, char **argv)
 		perror("malloc");
 		exit(-1);
 	}
-	offset = snprintf(args, sz, "(defvar *args* '(");
+	offset = snprintf(args, sz, "(setf *args* '(");
 	for (i=0; i < argc; i++)  {
 		offset += snprintf(args+offset,sz-offset,"\"%s\" ", argv[i]);
 	}
@@ -179,13 +224,19 @@ char *make_script_args(int argc, char **argv)
 int main(int argc, char **argv)
 {
 	static struct option long_options[] = {
-		{"help", no_argument,       0, 'h'},
-		{"lisp", required_argument, 0, 'l'},
+		{"help",    no_argument,       0, 'h'},
+		{"lisp",    required_argument, 0, 'l'},
+		{"build",   required_argument, 0, 'b'},
+		{"outfile", required_argument, 0, 'o'},
+		{"keep",    no_argument,       0, 'k'},
 		{ 0, 0, 0, 0 }
 	};
 	int option_index = 0;
 	int c = 0;
+	int keep = 0;
 	char *lisp = "sbcl";
+	char *execname = "a.out";
+	char *build = NULL;
 	char *args;
 
 	if (getenv("CL") != NULL) {
@@ -195,17 +246,33 @@ int main(int argc, char **argv)
 	setenv("POSIXLY_CORRECT", "t", 0);
 	
 	while (c != -1) {
-		c = getopt_long(argc, argv, "hl:", long_options, &option_index);
+		c = getopt_long(argc, argv, "hkl:b:o:", long_options, &option_index);
 
 		switch (c) {
 			case 'h':
-				printf("usage: cl [-l lisp-implementation]\n");
+				printf("usage: cl [-l lisp-implementation] [-b script.lisp]"
+				       " [-o outfile] [-k]\n");
 				exit(0);
 				break;
 
 			case 'l':
-				lisp = optarg;
+				lisp = strdup(optarg);
 				break;
+
+			case 'b':
+				build = strdup(optarg);
+				break;
+
+			case 'o':
+				execname = strdup(optarg);
+				break;
+
+			case 'k':
+				keep = 1;
+				break;
+
+			case '?':
+				exit(1);
 		}
 	}
 
@@ -214,7 +281,10 @@ int main(int argc, char **argv)
 		//printf("args = %s\n", args);
 		run_script(lisp, argv[optind], args);
 	} else {
-		invoke_lisp_repl(lisp);
+		if (build)
+			build_executable(lisp, build, execname, keep);
+		else
+			invoke_lisp_repl(lisp);
 	}
 
 	exit(0);
