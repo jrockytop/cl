@@ -39,8 +39,8 @@
 
 extern char *parse_args;
 extern char *shebang;
-extern char *lisp_args;
-extern char *create_build_file;
+extern char *build_setup;
+extern char *build;
 
 /*
  * Return a string that is the result of concatenating all the arguments.
@@ -119,7 +119,8 @@ void execute_lisp(char *lisp, char *expression, int ret)
 		if (!strcmp("ccl", lisp) || !strcmp("ccl64", lisp)) {
 			char *nodebug = concatenate("(progn (setf *debugger-hook* "
 						    "(lambda (x y)"
-						    "(declare (ignore y)) (describe x)))",
+						    "(declare (ignore y)) "
+						    "(setf *print-pretty* t)(describe x)(quit)))",
 						    expression, ")", NULL);
 			execlp(lisp, lisp, "-Q", "-e", nodebug, NULL);
 		}
@@ -155,41 +156,26 @@ void run_script(char *lisp, char *script, char *args)
 	char *expressions = concatenate("(defvar *program-name* nil)(defvar *args* nil)",
 					"(setf *program-name* \"",script, "\")", args,
 					shebang, parse_args,
-					"(load \"", script, "\")(quit)", NULL);
+					"(load \"", script, "\")(if (fboundp 'main) (main))"
+					"(quit)", NULL);
 	execute_lisp(lisp, expressions, 0);
 }
 
 /*
  * This function will build an executable file named <execname> from
- * the lisp file <filename> using the <lisp> implementation.  If the
+ * the lisp file <lisp_file> using the <lisp> implementation.  If the
  * <keep> option is true, the temporary build source file will not be
  * deleted (so one can inspect the code...)
  */
 void build_executable(char *lisp, char *lisp_file, char *execname, int keep)
 {
-	struct stat statbuf;
-	char *build_file = concatenate(lisp_file, ".CL-MAIN", NULL);
-	char *expressions = concatenate(shebang, lisp_args, create_build_file,
-					"(create-build-file \"", lisp_file, "\" \"",
-					execname, "\")(quit)", NULL);
+	char *expressions = concatenate("(defvar *program-name* nil)(defvar *args* nil)",
+					shebang, parse_args, "(load \"", lisp_file, "\")",
+					build_setup, "(let ((outfile \"", execname, "\"))",
+					build, "(quit))", NULL);
 
-	if (!stat(build_file, &statbuf)) {
-		fprintf(stderr, "Temporary build file '%s' exists.\n"
-			"The file must be removed before another build can execute.\n",
-			build_file);
-		exit(-1);
-	}
 	
-	execute_lisp(lisp, expressions, 1);
-	free(expressions);
-	expressions = concatenate(shebang, parse_args, "(load \"", build_file,
-				  "\")(quit)", NULL);
-	execute_lisp(lisp, expressions, 1);
-
-	if (!keep && unlink(build_file) < 0) {
-		perror(build_file);
-		exit(-1);
-	}
+	execute_lisp(lisp, expressions, 0);
 }
 
 /*

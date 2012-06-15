@@ -33,10 +33,24 @@
 ;;;
 (defun read-file (filename)
   (with-open-file (stream filename)
-    (loop for line = (read stream nil)
+    (loop for line = (read stream nil nil t)
           while line
           collect line)))
 
+(defun read-file-as-strings (filename)
+  (with-open-file (stream filename)
+    (loop for line = (read-line stream nil nil t)
+          while line 
+          collect line)))
+
+
+(defun string-to-lists (x)
+  (let (new)
+    (dolist (i x)
+      (unless (eql 0 (search "#!" i))
+	(push i new)))
+    (reverse new)))
+    
 ;;;
 ;;; This function returns t if the symbol should be included in the
 ;;; initialization code and not in the main function definition
